@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public abstract class ZFunction<T> implements Cloneable {
     static SoftReference<Map<ZFunction, Object>> cache = new SoftReference<Map<ZFunction, Object>>(new ConcurrentHashMap<ZFunction, Object>());
+    static Map<Class,ZFunction> functions = new HashMap<Class, ZFunction>();
 
     public List<Class> signature;
     public List<Object> args;
@@ -20,6 +21,7 @@ public abstract class ZFunction<T> implements Cloneable {
     public ZFunction(Class... clzs) {
         this.signature = new ArrayList<Class>(Arrays.asList(clzs));
         this.args = new ArrayList<Object> ();
+        functions.put(this.getClass(), this);
     }
 
     private void setArgs(List<Class> signature, List<Object> appliedArgs) {
@@ -115,7 +117,7 @@ public abstract class ZFunction<T> implements Cloneable {
             }
         };
 
-        ZFunction map = new ZFunction<List>(ZFunction.class ,Collection.class) {
+        ZFunction<List> map = new ZFunction<List>(ZFunction.class ,Collection.class) {
             @Override
             public List body(Object[] args) {
                 ZFunction func = (ZFunction)args[0];
@@ -134,26 +136,62 @@ public abstract class ZFunction<T> implements Cloneable {
             }
         };
 
-        ZFunction plus = new ZFunction<Integer>(Integer.class) {
+        ZFunction<Integer> plus = new ZFunction<Integer>(Integer.class, Integer.class) {
             @Override
             public Integer body(Object[] args) {
                 System.out.println("runned");
-                return (Integer)args[0] + 1;
+                return (Integer)args[0] + (Integer)args[1];
             }
         };
+
+        final ZFunction foldr = new ZFunction(ZFunction.class, Collection.class) {
+            @Override
+            public Object body(Object[] args) {
+                ZFunction f = (ZFunction) args[0];
+
+                LinkedList l;
+                if ( args[1] instanceof LinkedList) {
+                    l = (LinkedList)args[1];
+                } else {
+                    l = new LinkedList();
+                    l.addAll((Collection) args[1]);
+                }
+
+                Object result;
+                if (l.isEmpty()) result = null;
+                else if (l.size()==1) result = l.get(0);
+                else {
+                    try {
+                        ZFunction foldr = functions.get(this.getClass());
+                        Class p1 = (Class)f.signature.get(0);
+                        Class p2 = (Class)f.signature.get(1);
+
+                        result = f.apply(p1.cast(l.removeFirst()), p2.cast(foldr.apply(f, l).getValue())).getValue();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return result;
+            }
+        };
+
 
         System.out.println(test.apply("test").apply(123).equals(test.apply("test").apply(123)));
         System.out.println(test.apply("test").apply(123).getValue());
         System.out.println(test.apply("test").apply(123).getValue());
         System.out.println(test.apply("test", 123).getValue());
 
-        List<Integer> intList = new ArrayList<Integer>();
+        List<Integer> intList = new LinkedList<Integer>();
         intList.add(1);
         intList.add(2);
         intList.add(3);
 
-        System.out.println(map.apply(plus, intList).getValue());
-        System.out.println(plus.apply(1).getValue());
-        System.out.println(map.apply(plus).apply(intList).getValue().toString());
+        System.out.println(map.apply(plus.apply(1), intList).getValue());
+        System.out.println(plus.apply(1).apply(1).getValue());
+        System.out.println(map.apply(plus.apply(1)).apply(intList).getValue().toString());
+
+        System.out.println(plus.apply(1, 2).getValue().toString());
+
+        System.out.println(foldr.apply(plus,intList).getValue().toString());
     }
 }
