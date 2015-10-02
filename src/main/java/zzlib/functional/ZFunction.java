@@ -1,3 +1,4 @@
+package zzlib.functional;
 
 import java.lang.ref.SoftReference;
 import java.util.*;
