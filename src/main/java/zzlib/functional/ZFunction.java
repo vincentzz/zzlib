@@ -1,4 +1,3 @@
-package zzlib.functional;
 
 import java.lang.ref.SoftReference;
 import java.util.*;
@@ -11,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public abstract class ZFunction<T> implements Cloneable {
     static SoftReference<Map<ZFunction, Object>> cache = new SoftReference<Map<ZFunction, Object>>(new ConcurrentHashMap<ZFunction, Object>());
-    static Map<Class,ZFunction> functions = new HashMap<Class, ZFunction>();
 
     public List<Class> signature;
     public List<Object> args;
@@ -21,9 +19,7 @@ public abstract class ZFunction<T> implements Cloneable {
     public ZFunction(Class... clzs) {
         this.signature = new ArrayList<Class>(Arrays.asList(clzs));
         this.args = new ArrayList<Object> ();
-        functions.put(this.getClass(), this);
     }
-
     private void setArgs(List<Class> signature, List<Object> appliedArgs) {
         this.signature = signature;
         this.args = appliedArgs;
@@ -51,22 +47,22 @@ public abstract class ZFunction<T> implements Cloneable {
         T result;
         if (signature.isEmpty()) {
             if (useCache) {
-                if (cache.get() == null) {
-                    cache = new SoftReference<Map<ZFunction, Object>>(new ConcurrentHashMap<ZFunction, Object>());
+		Map<ZFunction, Object> cacheMap = cache.get();
+                if (cacheMap == null) {
+		    cacheMap = new ConcurrentHashMap<ZFunction, Object>();
+		    cache = new SoftReference<Map<ZFunction, Object>>(cacheMap);
                 }
-                if (cache.get().containsKey(this)) {
-                    result = (T) (cache.get().get(this));
+                if (cacheMap.containsKey(this)) {
+                    result = (T) (cacheMap.get(this));
                 } else {
                     result = body(args.toArray());
-                    cache.get().put(this, result);
+                    cacheMap.put(this, result);
                 }
-
             } else {
                 result = body(args.toArray());
             }
-
             return result;
-        } else throw new RuntimeException("Parameter is need to be applied first" + signature.toString());
+        } else throw new RuntimeException("All parameters are need to be applied before calling getValue()." + signature.toString());
     }
 
     abstract public T body(Object[] args);
@@ -105,82 +101,103 @@ public abstract class ZFunction<T> implements Cloneable {
         } catch (NoSuchMethodException ex) {
             throw new RuntimeException(ex);
         }
-
     }
+ 
+    /*
+     * define  useful Functions
+     */
+    public static final ZFunction foldr = new ZFunction(ZFunction.class, Object.class, Collection.class) {
+        @Override
+        public Object body(Object[] args) {
+            ZFunction f = (ZFunction) args[0];
+            Object v = args[1];
+
+            LinkedList l = new LinkedList();
+            l.addAll((Collection) args[2]);
+
+	    return l.isEmpty()? v : f.apply(l.removeFirst(), foldr.apply(f, v, l).getValue()).getValue(); 
+	}
+    };
+
+    public static final ZFunction<Integer> plus = new ZFunction<Integer>(Integer.class, Integer.class) {
+	@Override
+	public Integer body(Object[] args) {
+	    return (Integer)args[0] + (Integer)args[1];
+	}
+    };
+
+
+    public static final ZFunction<Integer> sum = foldr.apply(plus, 0);
+
+    public static final ZFunction<List> foldMap = new ZFunction<List>(ZFunction.class ,Collection.class) {
+        @Override
+        public List body(Object[] args) {
+            final ZFunction f = (ZFunction) args[0];
+            LinkedList l = new LinkedList();
+            l.addAll((Collection) args[1]);
+
+            return (List) foldr.apply(new ZFunction<List>(Object.class, LinkedList.class) {
+                @Override
+                public List body(Object[] args) {
+		    Object x = args[0];
+                    LinkedList xs =(LinkedList)args[1];
+                    xs.addFirst(f.apply(x).getValue());
+                    return xs;
+                }
+            }, new LinkedList(), l).getValue();
+        }
+    };
+
+    public static final ZFunction<List> foldFilter = new ZFunction<List>(ZFunction.class ,Collection.class) {
+        @Override
+        public List body(Object[] args) {
+            final ZFunction<Boolean> f = (ZFunction<Boolean>) args[0];
+            LinkedList l = new LinkedList();
+            l.addAll((Collection) args[1]);
+
+            return (List) foldr.apply(new ZFunction<List>(Object.class, LinkedList.class) {
+                @Override
+                public List body(Object[] args) {
+		    Object x = args[0];
+                    LinkedList xs =(LinkedList)args[1];
+                    if (f.apply(x).getValue()) {
+			xs.addFirst(x);
+		    }
+                    return xs;
+                }
+            }, new LinkedList(), l).getValue();
+        }
+    };
+
+    public static final ZFunction<List> map = new ZFunction<List>(ZFunction.class ,Collection.class) {
+        @Override
+        public List body(Object[] args) {
+            ZFunction func = (ZFunction)args[0];
+            Collection collection =(Collection) args[1];
+
+	    List result = new LinkedList();
+	    for (Object item : collection) {
+		result.add(func.apply(item).getValue());
+	    }
+	    return result;
+        }
+    };
+
+    public static final ZFunction<List> filter = new ZFunction<List> (ZFunction.class, Collection.class) {
+	@Override
+	public List body(Object[] args){
+	    ZFunction<Boolean> f = (ZFunction<Boolean>) args[0];
+	    LinkedList result = new LinkedList();
+	    for ( Object item : (Collection) args[1]) {
+		if (f.apply(item).getValue()){
+		    result.add(item);
+		}
+	    }
+	    return result;
+	}
+    };
 
     public static void main(String[] args) {
-        ZFunction test = new ZFunction(String.class, Integer.class) {
-            @Override
-            public Object body(Object[] args) {
-                System.out.println("function is triggered");
-                return Arrays.asList(args);
-            }
-        };
-
-        ZFunction<List> map = new ZFunction<List>(ZFunction.class ,Collection.class) {
-            @Override
-            public List body(Object[] args) {
-                ZFunction func = (ZFunction)args[0];
-                Collection collection =(Collection) args[1];
-
-                if ( func.signature.size()==1 ) {
-                    Class clz = (Class) func.signature.get(0);
-                    List result = new LinkedList();
-                    for (Object item : collection) {
-                        result.add(func.apply(clz.cast(item)).getValue());
-                    }
-                    return result;
-                }else {
-                    throw new RuntimeException("function can have only one argument.");
-                }
-            }
-        };
-
-        ZFunction<Integer> plus = new ZFunction<Integer>(Integer.class, Integer.class) {
-            @Override
-            public Integer body(Object[] args) {
-                System.out.println("runned");
-                return (Integer)args[0] + (Integer)args[1];
-            }
-        };
-
-        final ZFunction foldr = new ZFunction(ZFunction.class, Collection.class) {
-            @Override
-            public Object body(Object[] args) {
-                ZFunction f = (ZFunction) args[0];
-
-                LinkedList l;
-                if ( args[1] instanceof LinkedList) {
-                    l = (LinkedList)args[1];
-                } else {
-                    l = new LinkedList();
-                    l.addAll((Collection) args[1]);
-                }
-
-                Object result;
-                if (l.isEmpty()) result = null;
-                else if (l.size()==1) result = l.get(0);
-                else {
-                    try {
-                        ZFunction foldr = functions.get(this.getClass());
-                        Class p1 = (Class)f.signature.get(0);
-                        Class p2 = (Class)f.signature.get(1);
-
-                        result = f.apply(p1.cast(l.removeFirst()), p2.cast(foldr.apply(f, l).getValue())).getValue();
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                return result;
-            }
-        };
-
-
-        System.out.println(test.apply("test").apply(123).equals(test.apply("test").apply(123)));
-        System.out.println(test.apply("test").apply(123).getValue());
-        System.out.println(test.apply("test").apply(123).getValue());
-        System.out.println(test.apply("test", 123).getValue());
-
         List<Integer> intList = new LinkedList<Integer>();
         intList.add(1);
         intList.add(2);
@@ -190,8 +207,24 @@ public abstract class ZFunction<T> implements Cloneable {
         System.out.println(plus.apply(1).apply(1).getValue());
         System.out.println(map.apply(plus.apply(1)).apply(intList).getValue().toString());
 
+        System.out.println(foldMap.apply(plus.apply(1)).apply(intList).getValue().toString());
+
         System.out.println(plus.apply(1, 2).getValue().toString());
 
-        System.out.println(foldr.apply(plus,intList).getValue().toString());
+	System.out.println(foldFilter.apply(new ZFunction<Boolean>(Integer.class) {
+                @Override
+                public Boolean body(Object[] args) {
+		    return ((Integer)args[0]) % 2 == 1;
+                }
+		}).apply(intList).getValue().toString());
+
+	System.out.println(filter.apply(new ZFunction<Boolean>(Integer.class) {
+                @Override
+                public Boolean body(Object[] args) {
+		    return ((Integer)args[0]) % 2 == 1;
+                }
+		}).apply(intList).getValue().toString());
+
+        //System.out.println(foldr.apply(plus,intList).getValue().toString());
     }
 }
