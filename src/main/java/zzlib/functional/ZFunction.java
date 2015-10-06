@@ -79,29 +79,18 @@ public abstract class ZFunction<T> implements Cloneable {
     }
 
     @Override
-    public boolean equals (Object obj){
-        boolean result = false;
+    public boolean equals (Object obj) {
         if( obj instanceof ZFunction ) {
             ZFunction that = (ZFunction)obj;
-            if ( this.signature.equals(that.signature) && this.args.equals(that.args)) {
-                try {
-                    result = this.getClass().getMethod("body", Object[].class).equals(that.getClass().getMethod("body", Object[].class));
-                } catch (NoSuchMethodException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        }
-        return result;
+            return this.getClass().equals(that.getClass()) && this.signature.equals(that.signature) && this.args.equals(that.args);
+        } 
+	else return false;
     }
 
     @Override
     public int hashCode() {
-        try {
-            int hashCode =this.getClass().getMethod("body", Object[].class).hashCode() + this.signature.hashCode() + this.args.hashCode();
-            return hashCode;
-        } catch (NoSuchMethodException ex) {
-            throw new RuntimeException(ex);
-        }
+	int hashCode =this.getClass().hashCode() + this.signature.hashCode() + this.args.hashCode();
+	return hashCode;
     }
  
     /*
@@ -213,19 +202,16 @@ public abstract class ZFunction<T> implements Cloneable {
         System.out.println(plus.apply(1, 2).getValue().toString());
 
 	System.out.println(foldFilter.apply(new ZFunction<Boolean>(Integer.class) {
-                @Override
-                public Boolean body(Object[] args) {
-		    return ((Integer)args[0]) % 2 == 1;
-                }
+		    public Boolean body(Object[] args) {
+			return ((Integer)args[0]) % 2 == 1;
+		    }
 		}).apply(intList).getValue().toString());
-
+	
 	System.out.println(filter.apply(new ZFunction<Boolean>(Integer.class) {
-                @Override
-                public Boolean body(Object[] args) {
-		    return ((Integer)args[0]) % 2 == 1;
-                }
-		}).apply(intList).getValue().toString());
-
-        //System.out.println(foldr.apply(plus,intList).getValue().toString());
+		    public Boolean body(Object[] args) {
+			return ((Integer)args[0]) % 2 == 1;
+		    }
+		},intList).getValue().toString());
+	
     }
 }
